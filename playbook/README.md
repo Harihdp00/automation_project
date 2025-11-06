@@ -1,2 +1,0 @@
-# automation_project
-automation_project
