@@ -1,0 +1,28 @@
+---
+- name: Update /etc/hosts file on all nodes
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Build host entries from inventory
+      set_fact:
+        host_entries: |
+          {% for host in groups['all'] %}
+          {{ hostvars[host]['ansible_host'] | default(host) }} {{ host }}
+          {% endfor %}
+
+    - name: Display generated host entries
+      debug:
+        msg: "{{ host_entries }}"
+
+    - name: Backup existing /etc/hosts file
+      copy:
+        src: /etc/hosts
+        dest: /etc/hosts.bak
+        remote_src: yes
+
+    - name: Update /etc/hosts file with cluster entries
+      blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} ANSIBLE MANAGED HOST ENTRIES"
+        block: "{{ host_entries }}"
