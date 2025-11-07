@@ -1,20 +1,12 @@
----
-# ==========================================================
-# Ansible Master Playbook - Jenkins CI/CD Infrastructure
-# Automates setup of:
-#   1. Common DevOps user setup
-#   2. Hostname/IP resolution across all nodes
-#   3. Jenkins Master installation
-#   4. Jenkins Worker setup
-#   5. Worker registration to Jenkins Master
-# ==========================================================
-
 - import_playbook: playbooks/devops_user_setup.yaml
 
 - import_playbook: playbooks/update_hosts.yaml
 
 - import_playbook: playbooks/master_setup.yaml
+  when: groups['jenkins_master'] is defined and groups['jenkins_master'] | length > 0
 
 - import_playbook: playbooks/worker_setup.yaml
+  when: groups['jenkins_workers'] is defined and groups['jenkins_workers'] | length > 0
 
 - import_playbook: playbooks/register_worker.yaml
+  when: groups['jenkins_workers'] is defined and groups['jenkins_workers'] | length > 0
