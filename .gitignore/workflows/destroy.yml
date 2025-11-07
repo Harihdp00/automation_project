@@ -1,4 +1,4 @@
-name: 💣 Terraform Destroy Infrastructure
+name: 💣 Terraform Destroy Infrastructure (with Ansible Log Backup)
 
 on:
   workflow_dispatch:   # Manual trigger
@@ -41,8 +41,37 @@ jobs:
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/Hari_ubuntu.pem
           chmod 600 ~/.ssh/Hari_ubuntu.pem
 
-      - name: 🧨 Terraform Init
+      - name: 🧩 Terraform Init
         run: terraform -chdir=terraform init
 
-      - name: 💥 Terraform Destroy
+      - name: 🧠 Backup Ansible Logs from Control Node
+        continue-on-error: true
+        run: |
+          echo "📦 Attempting to fetch Ansible logs before destroy..."
+          CONTROL_IP=$(terraform -chdir=terraform output -raw ansible_control_ip)
+          if [ -z "$CONTROL_IP" ]; then
+            echo "❌ No control node found in Terraform output"
+            exit 0
+          fi
+          mkdir -p logs
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/Hari_ubuntu.pem devops@$CONTROL_IP:/home/devops/iac/automation_project/ansible/ansible.log logs/ansible.log || true
+          echo "✅ Log backup complete (if available)"
+
+      - name: 💾 Upload Ansible Logs to GitHub
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-log-backup
+          path: logs/ansible.log
+          if-no-files-found: ignore
+
+      - name: 🧹 Cleanup Local Files (Inventory, SSH Keys)
+        run: |
+          echo "🧹 Cleaning up temporary files..."
+          rm -f terraform/ansible_git_key
+          rm -f ~/.ssh/Hari_ubuntu.pem
+          rm -f terraform/../ansible/hosts || true
+          echo "✅ Cleanup done."
+
+      - name: 💥 Terraform Destroy Infrastructure
         run: terraform -chdir=terraform destroy -auto-approve
