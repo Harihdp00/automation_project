@@ -1,89 +1,94 @@
 ---
-- name: Setup Jenkins Worker Nodes
-  hosts: jenkins_workers
+- name: ⚙️ Jenkins Worker Node Setup
+  hosts: jenkins_worker
   become: yes
 
   vars:
-    # Fetch Jenkins Master IP dynamically from inventory or hostvars
-    jenkins_master_ip: "{{ hostvars['jenkins-master']['ansible_host'] | default(groups['jenkins_master'][0]) }}"
-    agent_dir: /opt/jenkins
-    agent_jar: /opt/jenkins/agent.jar
-    jenkins_user: devops
-    jenkins_url: "http://{{ jenkins_master_ip }}:8080"
-    agent_service: /etc/systemd/system/jenkins-agent.service
+    jenkins_master_url: "http://{{ hostvars['jenkins-master']['ansible_host'] }}:8080"
+    jenkins_agent_dir: "/opt/jenkins"
+    jenkins_agent_name: "{{ inventory_hostname }}"
+    jenkins_user: "devops"
+    jenkins_service_file: "/etc/systemd/system/jenkins-agent.service"
+    agent_jar_url: "{{ jenkins_master_url }}/jnlpJars/agent.jar"
+    jenkins_agent_secret_file: "/home/{{ jenkins_user }}/.jenkins-agent-secret"
 
   tasks:
-    - name: Update apt repositories
+    - name: Ensure Java (OpenJDK 17) is installed
       apt:
+        name: openjdk-17-jdk
+        state: present
         update_cache: yes
 
-    - name: Install required packages
-      apt:
-        name:
-          - openjdk-11-jdk
-          - git
-          - wget
-          - curl
-        state: present
-
-    - name: Create Jenkins agent directory
+    - name: Ensure Jenkins agent directory exists
       file:
-        path: "{{ agent_dir }}"
+        path: "{{ jenkins_agent_dir }}"
         state: directory
         owner: "{{ jenkins_user }}"
         group: "{{ jenkins_user }}"
         mode: '0755'
 
-    - name: Download Jenkins agent jar from master
+    - name: Download Jenkins agent.jar from master
       get_url:
-        url: "{{ jenkins_url }}/jnlpJars/agent.jar"
-        dest: "{{ agent_jar }}"
+        url: "{{ agent_jar_url }}"
+        dest: "{{ jenkins_agent_dir }}/agent.jar"
         mode: '0755'
-      retries: 3
+      retries: 5
       delay: 10
-      register: download_result
-      until: download_result is succeeded
+      register: agent_download
+      until: agent_download is succeeded
 
-    - name: Create Jenkins agent systemd service file
+    - name: Wait for Jenkins master to be ready
+      uri:
+        url: "{{ jenkins_master_url }}"
+        status_code: 200
+        timeout: 10
+      register: master_up
+      retries: 10
+      delay: 15
+      until: master_up.status == 200
+      ignore_errors: yes
+
+    - name: Fetch Jenkins agent secret file (from master)
+      delegate_to: jenkins-master
+      run_once: true
+      shell: |
+        cat /var/lib/jenkins/secrets/slave-to-master-security-kill-switch || true
+      register: agent_secret_fetch
+      ignore_errors: yes
+
+    - name: Create Jenkins secret file for agent
       copy:
-        dest: "{{ agent_service }}"
+        dest: "{{ jenkins_agent_secret_file }}"
+        content: "{{ agent_secret_fetch.stdout | default('dummy-secret', true) }}"
+        owner: "{{ jenkins_user }}"
+        group: "{{ jenkins_user }}"
+        mode: '0600'
+
+    - name: Create Jenkins agent service file
+      copy:
+        dest: "{{ jenkins_service_file }}"
         content: |
           [Unit]
-          Description=Jenkins Agent
+          Description=Jenkins Agent Service
           After=network.target
 
           [Service]
-          ExecStart=/usr/bin/java -jar {{ agent_jar }} -jnlpUrl {{ jenkins_url }}/computer/{{ inventory_hostname }}/jenkins-agent.jnlp -workDir {{ agent_dir }}
-          Restart=always
+          ExecStart=/usr/bin/java -jar {{ jenkins_agent_dir }}/agent.jar -jnlpUrl {{ jenkins_master_url }}/computer/{{ jenkins_agent_name }}/jenkins-agent.jnlp -secret @{{ jenkins_agent_secret_file }} -workDir {{ jenkins_agent_dir }}
           User={{ jenkins_user }}
-          WorkingDirectory={{ agent_dir }}
+          Restart=always
 
           [Install]
           WantedBy=multi-user.target
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Reload systemd daemon to recognize new service
-      systemd:
-        daemon_reload: yes
+      notify: Restart Jenkins Agent
 
     - name: Enable Jenkins agent service
       systemd:
         name: jenkins-agent
         enabled: yes
-
-    - name: Start Jenkins agent service
-      systemd:
-        name: jenkins-agent
         state: started
 
-    - name: Verify Jenkins agent service status
+  handlers:
+    - name: Restart Jenkins Agent
       systemd:
         name: jenkins-agent
-      register: agent_service_status
-
-    - name: Display Jenkins agent status
-      debug:
-        msg: >
-          ✅ Jenkins agent on {{ inventory_hostname }} is {{ agent_service_status.status.ActiveState }}
+        state: restarted
