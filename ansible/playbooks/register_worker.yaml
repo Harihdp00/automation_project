@@ -10,6 +10,14 @@
     agent_workdir: "/opt/jenkins"
 
   tasks:
+    - name: Wait until Jenkins API is reachable
+      wait_for:
+        host: 127.0.0.1
+        port: 8080
+        state: started
+        delay: 10
+        timeout: 300
+
     - name: Read Jenkins admin password
       slurp:
         src: "{{ jenkins_password_file }}"
@@ -19,7 +27,7 @@
       set_fact:
         jenkins_password: "{{ admin_pass_raw.content | b64decode | trim }}"
 
-    - name: Get Jenkins Crumb (CSRF token)
+    - name: Get Jenkins crumb (CSRF token)
       uri:
         url: "{{ jenkins_url }}/crumbIssuer/api/json"
         user: "{{ jenkins_user }}"
@@ -27,11 +35,14 @@
         force_basic_auth: yes
         return_content: yes
       register: crumb_response
+      retries: 5
+      delay: 5
+      until: crumb_response.status == 200
 
-    - name: Extract crumb value
+    - name: Extract crumb and cookie
       set_fact:
-        jenkins_crumb: "{{ crumb_response.json.crumb }}"
-        jenkins_cookie: "{{ crumb_response.cookies_string }}"
+        jenkins_crumb: "{{ crumb_response.json.crumb | default('') }}"
+        jenkins_cookie: "{{ crumb_response.cookies_string | default('') }}"
 
     - name: Register worker nodes via Jenkins API
       vars:
@@ -47,7 +58,7 @@
             <label>linux worker</label>
           </slave>
       uri:
-        url: "{{ jenkins_url }}/computer/doCreateItem?name={{ item }}&type=hudson.slaves.DumbSlave&json=%7B%7D"
+        url: "{{ jenkins_url }}/computer/doCreateItem?name={{ item }}&type=hudson.slaves.DumbSlave"
         method: POST
         user: "{{ jenkins_user }}"
         password: "{{ jenkins_password }}"
@@ -55,12 +66,15 @@
         headers:
           Jenkins-Crumb: "{{ jenkins_crumb }}"
           Cookie: "{{ jenkins_cookie }}"
-          Content-Type: "application/xml"
+          Content-Type: "text/xml"
         body: "{{ node_config_template }}"
         status_code: [200, 302]
-      loop: "{{ groups['jenkins_workers'] }}"
+      loop: "{{ groups['jenkins_workers'] | default([]) }}"
       register: worker_reg_results
+      when: groups['jenkins_workers'] is defined and groups['jenkins_workers'] | length > 0
 
-    - name: Display registration results
+    - name: Show registration summary
       debug:
-        var: worker_reg_results.results
+        msg: >-
+          Worker {{ item.item }} registration returned HTTP {{ item.status }}
+      loop: "{{ worker_reg_results.results | default([]) }}"
