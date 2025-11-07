@@ -1,12 +1,24 @@
-- import_playbook: playbooks/devops_user_setup.yaml
+---
+- name: 🚀 Full Jenkins Infrastructure Setup
+  hosts: all
+  gather_facts: yes
+  become: yes
 
-- import_playbook: playbooks/update_hosts.yaml
+  pre_tasks:
+    - name: 💡 Display start info
+      debug:
+        msg: "Starting full environment setup for {{ inventory_hostname }}"
 
-- import_playbook: playbooks/master_setup.yaml
-  when: groups['jenkins_master'] is defined and groups['jenkins_master'] | length > 0
+- import_playbook: devops_user_setup.yaml
+- import_playbook: update_hosts.yaml
+- import_playbook: master_setup.yaml
+- import_playbook: worker_setup.yaml
+- import_playbook: register_worker.yaml
 
-- import_playbook: playbooks/worker_setup.yaml
-  when: groups['jenkins_workers'] is defined and groups['jenkins_workers'] | length > 0
-
-- import_playbook: playbooks/register_worker.yaml
-  when: groups['jenkins_workers'] is defined and groups['jenkins_workers'] | length > 0
+- name: ✅ Final Summary
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Display completion message
+      debug:
+        msg: "🎉 Jenkins environment configured successfully on {{ inventory_hostname }}"
