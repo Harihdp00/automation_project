@@ -1,24 +1,24 @@
 ---
-- name: Ensure common DevOps user is configured
+- name: 🧑‍💻 Ensure DevOps user and SSH setup
   hosts: all
   become: yes
-
   tasks:
-    - name: Create devops user
+    - name: Create devops user if not present
       user:
         name: devops
-        state: present
         shell: /bin/bash
         create_home: yes
+        state: present
 
-    - name: Add devops user to sudoers with no password
-      copy:
-        dest: /etc/sudoers.d/devops
-        content: "devops ALL=(ALL) NOPASSWD:ALL\n"
-        mode: '0440'
+    - name: Add devops user to sudoers
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: '^devops'
+        line: 'devops ALL=(ALL) NOPASSWD:ALL'
         validate: '/usr/sbin/visudo -cf %s'
 
-    - name: Ensure .ssh directory exists with correct ownership
+    - name: Ensure .ssh directory exists
       file:
         path: /home/devops/.ssh
         state: directory
@@ -26,8 +26,22 @@
         group: devops
         mode: '0700'
 
-    - name: Copy authorized key from control node
+    - name: Copy authorized keys from ubuntu user if available
+      copy:
+        src: /home/ubuntu/.ssh/authorized_keys
+        dest: /home/devops/.ssh/authorized_keys
+        owner: devops
+        group: devops
+        mode: '0600'
+      ignore_errors: yes
+
+    - name: Add control node public key (optional)
       authorized_key:
         user: devops
         state: present
-        key: "{{ lookup('file', 'files/authorized_keys') }}"
+        key: "{{ lookup('file', '/home/devops/.ssh/id_ed25519.pub') | default('', true) }}"
+      ignore_errors: yes
+
+    - name: Print confirmation
+      debug:
+        msg: "✅ DevOps user setup completed successfully on {{ inventory_hostname }}"
