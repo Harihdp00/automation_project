@@ -1,4 +1,4 @@
-name: 🚀 Terraform & Ansible Deployment
+name: 🚀 Terraform & Ansible Deployment (Ubuntu 22.04 + TF 1.6.6)
 
 on:
   workflow_dispatch:   # Manual trigger
@@ -11,7 +11,7 @@ env:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04   # ✅ Stable and consistent with AWS AMI (Ubuntu 22.04)
 
     steps:
       - name: 📥 Checkout Repository
@@ -20,7 +20,7 @@ jobs:
       - name: ⚙️ Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: 1.6.6   # ✅ LTS-compatible version
 
       - name: 🔐 Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -29,28 +29,53 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      - name: 🔍 Verify TF Variables
+      - name: 🔍 Verify Terraform Variables
         run: |
-          echo "AWS Key Pair in use: $TF_VAR_key_name"
-          echo "AWS Region: $TF_VAR_aws_region"
+          echo "✅ AWS Region         : $TF_VAR_aws_region"
+          echo "✅ AWS Key Pair Name  : $TF_VAR_key_name"
+          echo "✅ GitHub Key Path    : $TF_VAR_github_private_key_path"
+          echo "✅ Project Prefix     : $TF_VAR_project_prefix"
 
-      - name: 🔑 Write GitHub Private Key (for Ansible repo clone)
+      - name: 🔑 Write GitHub Private Key (for repo clone in Control Node)
         run: |
           mkdir -p terraform
           echo "${{ secrets.PRIVATE_KEY }}" > terraform/ansible_git_key
           chmod 600 terraform/ansible_git_key
+          echo "✅ GitHub private key written successfully."
 
       - name: 🔑 Write AWS SSH Private Key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/Hari_ubuntu.pem
           chmod 600 ~/.ssh/Hari_ubuntu.pem
+          echo "✅ AWS SSH key ready at ~/.ssh/Hari_ubuntu.pem"
 
-      - name: 🚧 Terraform Init
-        run: terraform -chdir=terraform init
+      - name: 🧩 Terraform Init
+        run: |
+          echo "🚀 Initializing Terraform..."
+          terraform -chdir=terraform init
 
       - name: 🧩 Terraform Plan
-        run: terraform -chdir=terraform plan -out=tfplan
+        run: |
+          echo "🧠 Generating Terraform plan..."
+          terraform -chdir=terraform plan -out=tfplan
 
       - name: 🚀 Terraform Apply
-        run: terraform -chdir=terraform apply -auto-approve tfplan
+        run: |
+          echo "🚀 Applying Terraform configuration..."
+          terraform -chdir=terraform apply -auto-approve tfplan
+
+      - name: 📜 Terraform Output Summary
+        run: |
+          echo "✅ Terraform Outputs:"
+          terraform -chdir=terraform output || true
+
+      - name: 💾 Upload Terraform Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-logs
+          path: |
+            terraform/.terraform
+            terraform/terraform.tfstate*
+          if-no-files-found: ignore
