@@ -1,28 +1,63 @@
 ---
-- name: Update /etc/hosts file on all nodes
-  hosts: all
+- name: Verify Jenkins Master and Worker Status
+  hosts: jenkins_master
   become: yes
+  vars:
+    jenkins_url: "http://localhost:8080"
+    jenkins_user: "admin"
+    jenkins_password_file: "/var/lib/jenkins/secrets/initialAdminPassword"
 
   tasks:
-    - name: Build host entries from inventory
+    - name: Wait for Jenkins to be accessible
+      wait_for:
+        host: 127.0.0.1
+        port: 8080
+        state: started
+        delay: 10
+        timeout: 300
+
+    - name: Read Jenkins admin password
+      slurp:
+        src: "{{ jenkins_password_file }}"
+      register: admin_pass_raw
+
+    - name: Decode Jenkins admin password
       set_fact:
-        host_entries: |
-          {% for host in groups['all'] %}
-          {{ hostvars[host]['ansible_host'] | default(host) }} {{ host }}
-          {% endfor %}
+        jenkins_password: "{{ admin_pass_raw.content | b64decode | trim }}"
 
-    - name: Display generated host entries
+    - name: Check Jenkins login page
+      uri:
+        url: "{{ jenkins_url }}/login"
+        return_content: yes
+        status_code: 200
+      register: login_check
+
+    - name: Display Jenkins Master reachability
       debug:
-        msg: "{{ host_entries }}"
+        msg: >
+          ✅ Jenkins is accessible at {{ jenkins_url }} (HTTP {{ login_check.status }})
 
-    - name: Backup existing /etc/hosts file
-      copy:
-        src: /etc/hosts
-        dest: /etc/hosts.bak
-        remote_src: yes
+    - name: Get list of all nodes via Jenkins API
+      uri:
+        url: "{{ jenkins_url }}/computer/api/json"
+        user: "{{ jenkins_user }}"
+        password: "{{ jenkins_password }}"
+        force_basic_auth: yes
+        return_content: yes
+      register: nodes_info
 
-    - name: Update /etc/hosts file with cluster entries
-      blockinfile:
-        path: /etc/hosts
-        marker: "# {mark} ANSIBLE MANAGED HOST ENTRIES"
-        block: "{{ host_entries }}"
+    - name: Display registered Jenkins nodes
+      debug:
+        msg: >
+          🖥️ Registered Jenkins nodes: {{
+            nodes_info.json.computer | map(attribute='displayName') | join(', ')
+          }}
+
+    - name: Verify that all expected worker nodes are registered
+      assert:
+        that:
+          - groups['jenkins_workers'] | difference(
+              nodes_info.json.computer | map(attribute='displayName') | list
+            ) | length == 0
+        fail_msg: "❌ Some worker nodes are missing in Jenkins!"
+        success_msg: "✅ All Jenkins worker nodes successfully registered."
