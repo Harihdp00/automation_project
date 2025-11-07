@@ -1,80 +1,55 @@
 ---
-- name: Register Jenkins workers dynamically via API
+- name: 🤖 Register Jenkins Workers on Master
   hosts: jenkins_master
   become: yes
-
   vars:
     jenkins_url: "http://localhost:8080"
     jenkins_user: "admin"
-    jenkins_password_file: "/var/lib/jenkins/secrets/initialAdminPassword"
-    agent_workdir: "/opt/jenkins"
+    jenkins_password: "{{ lookup('file', '/var/lib/jenkins/secrets/initialAdminPassword') | default('admin', true) }}"
+    worker_labels: "linux,build"
+    worker_executor_count: 2
 
   tasks:
-    - name: Wait until Jenkins API is reachable
-      wait_for:
-        host: 127.0.0.1
-        port: 8080
-        state: started
-        delay: 10
-        timeout: 300
-
-    - name: Read Jenkins admin password
-      slurp:
-        src: "{{ jenkins_password_file }}"
-      register: admin_pass_raw
-
-    - name: Decode Jenkins admin password
-      set_fact:
-        jenkins_password: "{{ admin_pass_raw.content | b64decode | trim }}"
-
-    - name: Get Jenkins crumb (CSRF token)
+    - name: Wait for Jenkins API to become ready
       uri:
-        url: "{{ jenkins_url }}/crumbIssuer/api/json"
-        user: "{{ jenkins_user }}"
-        password: "{{ jenkins_password }}"
-        force_basic_auth: yes
-        return_content: yes
-      register: crumb_response
-      retries: 5
-      delay: 5
-      until: crumb_response.status == 200
+        url: "{{ jenkins_url }}/login"
+        status_code: 200
+      register: jenkins_api_ready
+      retries: 15
+      delay: 10
+      until: jenkins_api_ready.status == 200
 
-    - name: Extract crumb and cookie
-      set_fact:
-        jenkins_crumb: "{{ crumb_response.json.crumb | default('') }}"
-        jenkins_cookie: "{{ crumb_response.cookies_string | default('') }}"
-
-    - name: Register worker nodes via Jenkins API
-      vars:
-        node_config_template: |
-          <slave>
-            <name>{{ item }}</name>
-            <description>Auto-registered via Ansible</description>
-            <remoteFS>{{ agent_workdir }}</remoteFS>
-            <numExecutors>2</numExecutors>
-            <mode>NORMAL</mode>
-            <retentionStrategy class="hudson.slaves.RetentionStrategy$Always"/>
-            <launcher class="hudson.slaves.JNLPLauncher"/>
-            <label>linux worker</label>
-          </slave>
+    - name: Register each Jenkins worker node via REST API
       uri:
-        url: "{{ jenkins_url }}/computer/doCreateItem?name={{ item }}&type=hudson.slaves.DumbSlave"
+        url: "{{ jenkins_url }}/computer/doCreateItem?name={{ item }}"
         method: POST
         user: "{{ jenkins_user }}"
         password: "{{ jenkins_password }}"
         force_basic_auth: yes
+        status_code: 200,302
         headers:
-          Jenkins-Crumb: "{{ jenkins_crumb }}"
-          Cookie: "{{ jenkins_cookie }}"
-          Content-Type: "text/xml"
-        body: "{{ node_config_template }}"
-        status_code: [200, 302]
-      loop: "{{ groups['jenkins_workers'] | default([]) }}"
-      register: worker_reg_results
-      when: groups['jenkins_workers'] is defined and groups['jenkins_workers'] | length > 0
+          Content-Type: "application/x-www-form-urlencoded"
+        body: "type=hudson.slaves.DumbSlave&json={
+          \"name\": \"{{ item }}\",
+          \"nodeDescription\": \"Auto-registered worker\",
+          \"numExecutors\": {{ worker_executor_count }},
+          \"remoteFS\": \"/opt/jenkins\",
+          \"labelString\": \"{{ worker_labels }}\",
+          \"mode\": \"NORMAL\",
+          \"launcher\": {
+            \"stapler-class\": \"hudson.slaves.JNLPLauncher\",
+            \"workDirSettings\": {
+              \"disabled\": false,
+              \"internalDir\": \"remoting\",
+              \"workDirPath\": \"\"
+            }
+          }
+        }"
+      loop: "{{ groups['jenkins_worker'] }}"
+      register: registration_results
+      ignore_errors: yes
 
     - name: Show registration summary
       debug:
-        msg: >-
-          Worker {{ item.item }} registration returned HTTP {{ item.status }}
-      loop: "{{ worker_reg_results.results | default([]) }}"
+        msg: "🧩 Jenkins Worker '{{ item.item }}' registration status: {{ item.status }}"
+      loop: "{{ registration_results.results }}"
