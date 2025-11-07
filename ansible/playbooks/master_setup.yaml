@@ -1,88 +1,53 @@
 ---
-- name: Setup Jenkins Master Node
+- name: 🧰 Jenkins Master Setup
   hosts: jenkins_master
   become: yes
+
   vars:
-    jenkins_repo_url: "https://pkg.jenkins.io/debian-stable"
-    jenkins_key_url: "https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key"
-    jenkins_keyring: /usr/share/keyrings/jenkins-keyring.gpg
-    jenkins_repo_entry: "deb [signed-by={{ jenkins_keyring }}] {{ jenkins_repo_url }} binary/"
+    jenkins_repo_key_url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+    jenkins_repo_url: deb https://pkg.jenkins.io/debian-stable binary/
 
   tasks:
-    - name: Ensure prerequisites for apt over https are installed
+    - name: Ensure Java (OpenJDK 17) is installed
       apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - gnupg
-          - wget
+        name: openjdk-17-jdk
         state: present
         update_cache: yes
 
-    - name: Fetch Jenkins repository GPG key to keyring
-      ansible.builtin.get_url:
-        url: "{{ jenkins_key_url }}"
-        dest: "{{ jenkins_keyring }}.tmp"
-        mode: '0644'
-      register: fetched_key
+    - name: Add Jenkins repository key
+      ansible.builtin.apt_key:
+        url: "{{ jenkins_repo_key_url }}"
+        state: present
 
-    - name: Import key to keyring (atomic)
-      command: "gpg --dearmor --yes --output {{ jenkins_keyring }} {{ jenkins_keyring }}.tmp"
-      args:
-        creates: "{{ jenkins_keyring }}"
-      when: fetched_key is changed
-
-    - name: Remove temporary key file
-      file:
-        path: "{{ jenkins_keyring }}.tmp"
-        state: absent
-      when: fetched_key is changed
-
-    - name: Add Jenkins apt repository (signed-by keyring)
+    - name: Add Jenkins apt repository
       ansible.builtin.apt_repository:
-        repo: "{{ jenkins_repo_entry }}"
-        filename: jenkins
+        repo: "{{ jenkins_repo_url }}"
         state: present
-        update_cache: yes
 
-    - name: Install Jenkins and Java
+    - name: Install Jenkins
       apt:
-        name:
-          - openjdk-11-jdk
-          - jenkins
+        name: jenkins
         state: present
         update_cache: yes
 
     - name: Ensure Jenkins service is enabled and started
-      systemd:
+      service:
         name: jenkins
+        state: started
         enabled: yes
-        state: started
-        daemon_reload: yes
 
-    - name: Wait for Jenkins to open port 8080 (may take longer on first boot)
-      wait_for:
-        host: 127.0.0.1
+    - name: Open Jenkins port 8080 in firewall (optional)
+      ansible.builtin.ufw:
+        rule: allow
         port: 8080
-        state: started
-        delay: 10
-        timeout: 300
-      register: wait_jenkins
+        proto: tcp
+      ignore_errors: yes
 
-    - name: Wait for initial password file to exist
-      wait_for:
-        path: /var/lib/jenkins/secrets/initialAdminPassword
-        state: present
-        timeout: 120
-        delay: 5
-
-    - name: Read Jenkins initial admin password
+    - name: Get Jenkins initial admin password
       slurp:
         src: /var/lib/jenkins/secrets/initialAdminPassword
-      register: admin_pw_b64
-      changed_when: false
+      register: jenkins_admin_pass
 
-    - name: Print Jenkins initial admin password
+    - name: Show Jenkins initial password
       debug:
-        msg: "Initial Jenkins admin password: {{ admin_pw_b64.content | b64decode }}"
-
+        msg: "🔐 Jenkins admin password on {{ inventory_hostname }}: {{ jenkins_admin_pass['content'] | b64decode }}"
