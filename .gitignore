@@ -1,6 +1,0 @@
-# Sensitive files
-terraform/ansible_git_key
-*.pem
-*.key
-*.tfstate
-*.tfstate.backup
