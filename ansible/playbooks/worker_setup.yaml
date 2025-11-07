@@ -4,10 +4,13 @@
   become: yes
 
   vars:
+    # Fetch Jenkins Master IP dynamically from inventory or hostvars
     jenkins_master_ip: "{{ hostvars['jenkins-master']['ansible_host'] | default(groups['jenkins_master'][0]) }}"
     agent_dir: /opt/jenkins
     agent_jar: /opt/jenkins/agent.jar
     jenkins_user: devops
+    jenkins_url: "http://{{ jenkins_master_ip }}:8080"
+    agent_service: /etc/systemd/system/jenkins-agent.service
 
   tasks:
     - name: Update apt repositories
@@ -33,7 +36,7 @@
 
     - name: Download Jenkins agent jar from master
       get_url:
-        url: "http://{{ jenkins_master_ip }}:8080/jnlpJars/agent.jar"
+        url: "{{ jenkins_url }}/jnlpJars/agent.jar"
         dest: "{{ agent_jar }}"
         mode: '0755'
       retries: 3
@@ -41,8 +44,46 @@
       register: download_result
       until: download_result is succeeded
 
-    - name: Create Jenkins agent service file
+    - name: Create Jenkins agent systemd service file
       copy:
-        dest: /etc/systemd/system/jenkins-agent.service
+        dest: "{{ agent_service }}"
         content: |
           [Unit]
+          Description=Jenkins Agent
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/bin/java -jar {{ agent_jar }} -jnlpUrl {{ jenkins_url }}/computer/{{ inventory_hostname }}/jenkins-agent.jnlp -workDir {{ agent_dir }}
+          Restart=always
+          User={{ jenkins_user }}
+          WorkingDirectory={{ agent_dir }}
+
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reload systemd daemon to recognize new service
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable Jenkins agent service
+      systemd:
+        name: jenkins-agent
+        enabled: yes
+
+    - name: Start Jenkins agent service
+      systemd:
+        name: jenkins-agent
+        state: started
+
+    - name: Verify Jenkins agent service status
+      systemd:
+        name: jenkins-agent
+      register: agent_service_status
+
+    - name: Display Jenkins agent status
+      debug:
+        msg: >
+          ✅ Jenkins agent on {{ inventory_hostname }} is {{ agent_service_status.status.ActiveState }}
