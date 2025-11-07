@@ -1,8 +1,7 @@
 name: 🚀 Terraform & Ansible Deployment
 
 on:
-  # Run manually from the GitHub Actions tab
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger only — safe for testing
 
 jobs:
   deploy:
@@ -24,7 +23,7 @@ jobs:
         with:
           terraform_version: 1.9.8
 
-      # Step 3️⃣: Configure AWS Credentials (from GitHub Secrets)
+      # Step 3️⃣: Configure AWS credentials (from GitHub Secrets)
       - name: 🌍 Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -32,15 +31,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Step 4️⃣: Write private GitHub key for Ansible Control Node
+      # Step 4️⃣: Add Ansible GitHub Deploy Key
       - name: 🔑 Write Ansible GitHub Deploy Key
         run: |
           mkdir -p terraform
           echo "${{ secrets.PRIVATE_KEY }}" > terraform/ansible_git_key
           chmod 600 terraform/ansible_git_key
-          echo "✅ GitHub Deploy Key saved locally"
+          echo "✅ Deploy key saved to terraform/ansible_git_key"
 
-      # Step 5️⃣: Terraform Init
+      # Step 5️⃣: Initialize Terraform
       - name: 🧱 Terraform Init
         working-directory: terraform
         run: terraform init
@@ -50,24 +49,24 @@ jobs:
         working-directory: terraform
         run: terraform plan -out=tfplan
 
-      # Step 7️⃣: Terraform Apply
+      # Step 7️⃣: Terraform Apply (provision infrastructure)
       - name: 🚀 Terraform Apply
         working-directory: terraform
         run: terraform apply -auto-approve tfplan
 
-      # Step 8️⃣: Get Control Node IP
-      - name: 🌐 Get Control Node IP
+      # Step 8️⃣: Get Ansible Control Node IP
+      - name: 🌐 Fetch Control Node IP
         id: get_ip
         working-directory: terraform
         run: |
           CONTROL_IP=$(terraform output -raw ansible_control_ip)
           echo "CONTROL_IP=$CONTROL_IP" >> $GITHUB_ENV
-          echo "Ansible Control Node IP: $CONTROL_IP"
+          echo "✅ Control Node IP: $CONTROL_IP"
 
-      # Step 9️⃣: Run Ansible remotely from the Control Node
-      - name: 🧠 Run Ansible on Control Node
+      # Step 9️⃣: Run Ansible remotely on Control Node
+      - name: 🧠 Execute Ansible Playbooks
         run: |
-          echo "🔧 Preparing SSH key..."
+          echo "🔧 Preparing AWS SSH key..."
           echo "${{ secrets.AWS_SSH_KEY }}" > Hari_ubuntu.pem
           chmod 600 Hari_ubuntu.pem
 
@@ -78,7 +77,9 @@ jobs:
             ansible-playbook -i hosts playbooks/site.yaml
           EOF
 
-      # Optional cleanup (you can disable if not needed)
-      - name: 🧹 Clean up keys
+      # Step 🔟: Cleanup (optional)
+      - name: 🧹 Clean up sensitive files
         if: always()
-        run: rm -f terraform/ansible_git_key Hari_ubuntu.pem
+        run: |
+          rm -f terraform/ansible_git_key Hari_ubuntu.pem
+          echo "🧽 Cleanup complete"
