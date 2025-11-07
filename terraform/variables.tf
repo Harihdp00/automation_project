@@ -11,9 +11,9 @@ variable "key_name" {
 }
 
 variable "github_private_key_path" {
-  description = "Path to GitHub private key"
+  description = "Local path to GitHub deploy private key (used by Ansible control node)"
   type        = string
-  default     = "${path.module}/ansible_git_key"
+  default     = "terraform/ansible_git_key"   # ✅ Simple string — no interpolation
 }
 
 variable "project_prefix" {
