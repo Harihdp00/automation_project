@@ -1,27 +1,29 @@
-name: 💣 Terraform Destroy (AWS Full Cleanup)
+name: 🚀 Terraform & Ansible Deployment (Free Tier - Local State)
 
 on:
-  workflow_dispatch:   # Manual trigger from Actions tab
+  workflow_dispatch:   # Manual trigger
 
 env:
   TF_VAR_aws_region: ap-south-1
   TF_VAR_key_name: Hari_ubuntu
-  TF_VAR_github_private_key_path: terraform/ansible_git_key
   TF_VAR_project_prefix: automation-project
 
 jobs:
-  destroy:
-    runs-on: ubuntu-22.04   # Same as deploy job
+  deploy:
+    runs-on: ubuntu-22.04
 
     steps:
+      # Step 1: Checkout repository
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
+      # Step 2: Setup Terraform
       - name: ⚙️ Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.6.6
 
+      # Step 3: Configure AWS Credentials
       - name: 🔐 Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -29,34 +31,33 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      - name: 🔑 Write AWS SSH Private Key
+      # Step 4: Verify Variables
+      - name: 🔍 Verify Variables
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/Hari_ubuntu.pem
-          chmod 600 ~/.ssh/Hari_ubuntu.pem
-          echo "✅ AWS SSH key ready at ~/.ssh/Hari_ubuntu.pem"
+          echo "AWS Region          : $TF_VAR_aws_region"
+          echo "AWS Key Pair        : $TF_VAR_key_name"
+          echo "Project Prefix      : $TF_VAR_project_prefix"
 
-      - name: 🧩 Terraform Init
-        run: |
-          echo "🚀 Initializing Terraform..."
-          terraform -chdir=terraform init
+      # Step 5: Initialize Terraform
+      - name: 🚀 Terraform Init
+        run: terraform -chdir=terraform init
 
-      - name: 💣 Terraform Destroy
-        run: |
-          echo "🔥 Starting full AWS cleanup..."
-          terraform -chdir=terraform destroy -auto-approve
-          echo "✅ All Terraform-managed AWS resources destroyed successfully!"
+      # Step 6: Terraform Plan
+      - name: 🧩 Terraform Plan
+        run: terraform -chdir=terraform plan -out=tfplan
 
-      - name: 🧹 Cleanup Local Terraform Files
-        run: |
-          echo "🧽 Cleaning up Terraform cache and state files..."
-          rm -rf terraform/.terraform terraform/*.tfstate* terraform/.terraform.lock.hcl || true
-          echo "🧹 Local Terraform files removed."
+      # Step 7: Terraform Apply
+      - name: 🚀 Terraform Apply
+        run: terraform -chdir=terraform apply -auto-approve tfplan
 
-      - name: 💾 Upload Destroy Logs
+      # Step 8: Show Outputs
+      - name: 📜 Terraform Outputs
+        run: terraform -chdir=terraform output || true
+
+      # Step 9: Save Terraform State (so destroy works later)
+      - name: 💾 Upload Terraform State
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-destroy-logs
-          path: terraform/
-          if-no-files-found: ignore
+          name: terraform-state
+          path: terraform/terraform.tfstate
