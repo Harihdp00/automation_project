@@ -23,7 +23,7 @@ data "aws_subnets" "default" {
 # SECURITY GROUP
 ############################################################
 
-# Generate a small random suffix to avoid duplicate SG names
+# Generate random suffix to prevent duplicate SG names
 resource "random_string" "suffix" {
   length  = 4
   upper   = false
