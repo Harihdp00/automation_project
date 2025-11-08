@@ -110,6 +110,7 @@ locals {
 # 1️⃣ ANSIBLE CONTROL NODE
 ############################################################
 resource "aws_instance" "ansible_node" {
+  depends_on = [aws_key_pair.hari_key_pair]
   ami                         = var.ami_id
   instance_type               = "t2.micro"  # ✅ Free-tier
   key_name                    = aws_key_pair.hari_key_pair.key_name
@@ -149,6 +150,7 @@ resource "aws_instance" "ansible_node" {
 # 2️⃣ JENKINS MASTER NODE
 ############################################################
 resource "aws_instance" "jenkins_master" {
+  depends_on = [aws_key_pair.hari_key_pair]
   ami                         = var.ami_id
   instance_type               = "t2.micro"
   key_name                    = aws_key_pair.hari_key_pair.key_name
@@ -167,6 +169,7 @@ resource "aws_instance" "jenkins_master" {
 # 3️⃣ JENKINS WORKER NODE
 ############################################################
 resource "aws_instance" "jenkins_worker" {
+  depends_on = [aws_key_pair.hari_key_pair]
   ami                         = var.ami_id
   instance_type               = "t2.micro"
   key_name                    = aws_key_pair.hari_key_pair.key_name
