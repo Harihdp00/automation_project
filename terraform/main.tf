@@ -98,8 +98,9 @@ resource "aws_instance" "ansible_node" {
 
     # Add GitHub SSH private key
     cat <<'EOKEY' > /home/devops/.ssh/id_ed25519
-    ${file(var.github_private_key_path)}
+    ${file(abspath(var.github_private_key_path))}
     EOKEY
+
     chmod 600 /home/devops/.ssh/id_ed25519
     chown devops:devops /home/devops/.ssh/id_ed25519
 
