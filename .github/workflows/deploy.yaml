@@ -36,12 +36,12 @@ jobs:
           echo "✅ GitHub Key Path    : $TF_VAR_github_private_key_path"
           echo "✅ Project Prefix     : $TF_VAR_project_prefix"
 
-      - name: 🔑 Write GitHub Private Key (for repo clone in Control Node)
+      - name: 🔑 Write GitHub Private Key (for Ansible repo clone)
         run: |
-          mkdir -p terraform
-          echo "${{ secrets.PRIVATE_KEY }}" > terraform/ansible_git_key
-          chmod 600 terraform/ansible_git_key
-          echo "✅ GitHub private key written successfully."
+          mkdir -p $GITHUB_WORKSPACE/terraform
+          echo "${{ secrets.PRIVATE_KEY }}" > $GITHUB_WORKSPACE/terraform/ansible_git_key
+          chmod 600 $GITHUB_WORKSPACE/terraform/ansible_git_key
+          echo "TF_VAR_github_private_key_path=$GITHUB_WORKSPACE/terraform/ansible_git_key" >> $GITHUB_ENV
 
       - name: 🔑 Write AWS SSH Private Key
         run: |
