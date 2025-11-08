@@ -41,6 +41,8 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/terraform
           echo "${{ secrets.PRIVATE_KEY }}" > $GITHUB_WORKSPACE/terraform/ansible_git_key
           chmod 600 $GITHUB_WORKSPACE/terraform/ansible_git_key
+
+          # ✅ Set absolute path for Terraform
           echo "TF_VAR_github_private_key_path=$GITHUB_WORKSPACE/terraform/ansible_git_key" >> $GITHUB_ENV
 
       - name: 🔑 Write AWS SSH Private Key
