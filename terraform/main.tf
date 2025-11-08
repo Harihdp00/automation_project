@@ -180,7 +180,7 @@ resource "null_resource" "run_ansible" {
       echo "🚀 Starting Ansible automation from Control Node..."
       sleep 60
 
-      KEY_PATH="/home/terraform/.ssh/${var.key_name}.pem"
+      KEY_PATH="$HOME/.ssh/${var.key_name}.pem"
 
       if [ ! -f "$KEY_PATH" ]; then
         echo "❌ ERROR: SSH key not found at $KEY_PATH"
@@ -198,3 +198,4 @@ resource "null_resource" "run_ansible" {
     EOT
   }
 }
+
