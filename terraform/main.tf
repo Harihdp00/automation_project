@@ -24,6 +24,12 @@ resource "local_file" "hari_private_key" {
   filename = "${path.module}/Hari_ubuntu.pem"
 }
 
+# Wait briefly for AWS to register the key pair
+resource "time_sleep" "wait_for_key_pair" {
+  depends_on = [aws_key_pair.hari_key_pair]
+  create_duration = "10s"
+}
+
 ############################################################
 # DATA SOURCES (VPC & SUBNETS)
 ############################################################
