@@ -18,16 +18,17 @@ resource "aws_key_pair" "hari_key_pair" {
   public_key = tls_private_key.hari_key.public_key_openssh
 }
 
-# Save the private key locally (for SSH & Ansible use)
-resource "local_file" "hari_private_key" {
-  content  = tls_private_key.hari_key.private_key_pem
-  filename = "${path.module}/Hari_ubuntu.pem"
+# Wait for AWS to register keypair before using
+resource "time_sleep" "wait_for_key_pair" {
+  depends_on      = [aws_key_pair.hari_key_pair]
+  create_duration = "10s"
 }
 
-# Wait briefly for AWS to register the key pair
-resource "time_sleep" "wait_for_key_pair" {
-  depends_on = [aws_key_pair.hari_key_pair]
-  create_duration = "10s"
+# Save private key locally for SSH/Ansible
+resource "local_file" "hari_private_key" {
+  depends_on = [tls_private_key.hari_key]
+  content    = tls_private_key.hari_key.private_key_pem
+  filename   = "${path.module}/Hari_ubuntu.pem"
 }
 
 ############################################################
@@ -45,7 +46,7 @@ data "aws_subnets" "default" {
 }
 
 ############################################################
-# SECURITY GROUP (Unique name with random suffix)
+# SECURITY GROUP (with random suffix)
 ############################################################
 resource "random_string" "suffix" {
   length  = 4
@@ -116,9 +117,10 @@ locals {
 # 1️⃣ ANSIBLE CONTROL NODE
 ############################################################
 resource "aws_instance" "ansible_node" {
-  depends_on = [aws_key_pair.hari_key_pair]
+  depends_on = [time_sleep.wait_for_key_pair]
+
   ami                         = var.ami_id
-  instance_type               = "t2.micro"  # ✅ Free-tier
+  instance_type               = "t2.micro"
   key_name                    = aws_key_pair.hari_key_pair.key_name
   subnet_id                   = data.aws_subnets.default.ids[0]
   vpc_security_group_ids      = [aws_security_group.devops_sg.id]
@@ -128,20 +130,16 @@ resource "aws_instance" "ansible_node" {
     ${local.base_user_data}
     hostnamectl set-hostname ansible-control
 
-    # Add GitHub SSH private key securely
     echo "${filebase64(abspath(var.github_private_key_path))}" | base64 -d > /home/devops/.ssh/id_ed25519
     chmod 600 /home/devops/.ssh/id_ed25519
     chown devops:devops /home/devops/.ssh/id_ed25519
 
-    # Add GitHub to known_hosts
     ssh-keyscan github.com >> /home/devops/.ssh/known_hosts
     chown devops:devops /home/devops/.ssh/known_hosts
 
-    # Clone automation repo
     sudo -u devops git clone git@github.com:Harihdp00/automation_project.git /home/devops/iac/automation_project || true
     chown -R devops:devops /home/devops/iac
 
-    # Install Ansible and run site playbook
     apt install -y ansible
     cd /home/devops/iac/automation_project/ansible
     ansible-playbook -i hosts playbooks/site.yaml
@@ -156,7 +154,8 @@ resource "aws_instance" "ansible_node" {
 # 2️⃣ JENKINS MASTER NODE
 ############################################################
 resource "aws_instance" "jenkins_master" {
-  depends_on = [aws_key_pair.hari_key_pair]
+  depends_on = [time_sleep.wait_for_key_pair]
+
   ami                         = var.ami_id
   instance_type               = "t2.micro"
   key_name                    = aws_key_pair.hari_key_pair.key_name
@@ -175,7 +174,8 @@ resource "aws_instance" "jenkins_master" {
 # 3️⃣ JENKINS WORKER NODE
 ############################################################
 resource "aws_instance" "jenkins_worker" {
-  depends_on = [aws_key_pair.hari_key_pair]
+  depends_on = [time_sleep.wait_for_key_pair]
+
   ami                         = var.ami_id
   instance_type               = "t2.micro"
   key_name                    = aws_key_pair.hari_key_pair.key_name
@@ -191,8 +191,12 @@ resource "aws_instance" "jenkins_worker" {
 }
 
 ############################################################
-# 4️⃣ OUTPUTS
+# OUTPUTS
 ############################################################
+output "key_name" {
+  value = aws_key_pair.hari_key_pair.key_name
+}
+
 output "ansible_control_ip" {
   value = aws_instance.ansible_node.public_ip
 }
