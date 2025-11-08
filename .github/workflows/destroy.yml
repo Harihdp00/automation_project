@@ -1,7 +1,7 @@
-name: 💣 Terraform Destroy (AWS Cleanup)
+name: 💣 Terraform Destroy (AWS Full Cleanup)
 
 on:
-  workflow_dispatch:  # Trigger manually
+  workflow_dispatch:   # Manual trigger from Actions tab
 
 env:
   TF_VAR_aws_region: ap-south-1
@@ -11,7 +11,7 @@ env:
 
 jobs:
   destroy:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04   # Same as deploy job
 
     steps:
       - name: 📥 Checkout Repository
@@ -29,6 +29,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
+      - name: 🔑 Write AWS SSH Private Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AWS_SSH_KEY }}" > ~/.ssh/Hari_ubuntu.pem
+          chmod 600 ~/.ssh/Hari_ubuntu.pem
+          echo "✅ AWS SSH key ready at ~/.ssh/Hari_ubuntu.pem"
+
       - name: 🧩 Terraform Init
         run: |
           echo "🚀 Initializing Terraform..."
@@ -36,8 +43,15 @@ jobs:
 
       - name: 💣 Terraform Destroy
         run: |
-          echo "🔥 Destroying all Terraform-managed AWS resources..."
+          echo "🔥 Starting full AWS cleanup..."
           terraform -chdir=terraform destroy -auto-approve
+          echo "✅ All Terraform-managed AWS resources destroyed successfully!"
+
+      - name: 🧹 Cleanup Local Terraform Files
+        run: |
+          echo "🧽 Cleaning up Terraform cache and state files..."
+          rm -rf terraform/.terraform terraform/*.tfstate* terraform/.terraform.lock.hcl || true
+          echo "🧹 Local Terraform files removed."
 
       - name: 💾 Upload Destroy Logs
         if: always()
@@ -45,3 +59,4 @@ jobs:
         with:
           name: terraform-destroy-logs
           path: terraform/
+          if-no-files-found: ignore
