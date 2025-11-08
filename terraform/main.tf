@@ -6,6 +6,32 @@ provider "aws" {
 }
 
 ############################################################
+# CREATE SSH KEY (Hari_ubuntu) INSIDE TERRAFORM
+############################################################
+resource "tls_private_key" "hari_key" {
+  algorithm = "RSA"
+  rsa_bits  = 2048
+}
+
+resource "aws_key_pair" "hari_key_pair" {
+  key_name   = "Hari_ubuntu"
+  public_key = tls_private_key.hari_key.public_key_openssh
+}
+
+# Wait for AWS to register key
+resource "time_sleep" "wait_for_key_pair" {
+  depends_on      = [aws_key_pair.hari_key_pair]
+  create_duration = "10s"
+}
+
+# Save the private key locally (for Ansible or debugging)
+resource "local_file" "save_private_key" {
+  content    = tls_private_key.hari_key.private_key_pem
+  filename   = "${path.module}/Hari_ubuntu.pem"
+  depends_on = [tls_private_key.hari_key]
+}
+
+############################################################
 # TLS + AWS KEY PAIR (Auto-created)
 ############################################################
 resource "tls_private_key" "hari_key" {
