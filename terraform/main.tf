@@ -22,7 +22,7 @@ resource "aws_key_pair" "hari_key_pair" {
 }
 
 ############################################################
-# OPTIONAL: WAIT AFTER KEY CREATION
+# WAIT FOR KEY CREATION
 ############################################################
 resource "time_sleep" "wait_for_key_pair" {
   depends_on      = [aws_key_pair.hari_key_pair]
@@ -33,12 +33,12 @@ resource "time_sleep" "wait_for_key_pair" {
 # SAVE PRIVATE KEY LOCALLY
 ############################################################
 resource "local_file" "save_private_key" {
-  content    = tls_private_key.hari_key.private_key_pem
-  filename   = "${path.module}/Hari_ubuntu.pem"
+  content  = tls_private_key.hari_key.private_key_pem
+  filename = "${path.module}/Hari_ubuntu.pem"
 }
 
 ############################################################
-# DATA SOURCES
+# DATA SOURCES (VPC & SUBNETS)
 ############################################################
 data "aws_vpc" "default" {
   default = true
@@ -102,20 +102,33 @@ resource "aws_security_group" "devops_sg" {
 }
 
 ############################################################
-# COMMON BOOTSTRAP
+# COMMON BOOTSTRAP SCRIPT — FIX SSH REFUSAL HERE
 ############################################################
 locals {
   base_user_data = <<-EOC
     #!/bin/bash
-    apt update -y
-    apt install -y python3 python3-pip git unzip curl awscli
+    echo "🚀 Bootstrapping instance..."
+
+    # System update & install
+    apt-get update -y
+    apt-get install -y python3 python3-pip git unzip curl awscli openssh-server
+
+    # Ensure SSH service is enabled and started
+    systemctl enable ssh
+    systemctl start ssh
+
+    # Create devops user
     useradd -m -s /bin/bash devops
     echo "devops ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+    # Setup SSH for devops
     mkdir -p /home/devops/.ssh
     cp /home/ubuntu/.ssh/authorized_keys /home/devops/.ssh/ || true
     chown -R devops:devops /home/devops/.ssh
     chmod 700 /home/devops/.ssh
     chmod 600 /home/devops/.ssh/authorized_keys || true
+
+    echo "✅ SSH setup complete"
   EOC
 }
 
@@ -142,7 +155,7 @@ resource "aws_instance" "ansible_node" {
 }
 
 ############################################################
-# JENKINS MASTER
+# JENKINS MASTER NODE
 ############################################################
 resource "aws_instance" "jenkins_master" {
   depends_on = [aws_key_pair.hari_key_pair, time_sleep.wait_for_key_pair]
@@ -161,7 +174,7 @@ resource "aws_instance" "jenkins_master" {
 }
 
 ############################################################
-# JENKINS WORKER
+# JENKINS WORKER NODE
 ############################################################
 resource "aws_instance" "jenkins_worker" {
   depends_on = [aws_key_pair.hari_key_pair, time_sleep.wait_for_key_pair]
