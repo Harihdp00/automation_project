@@ -23,6 +23,7 @@ data "aws_subnets" "default" {
 # SECURITY GROUP
 ############################################################
 
+# ✅ Add a random suffix to avoid InvalidGroup.Duplicate
 resource "random_string" "suffix" {
   length  = 4
   upper   = false
@@ -69,7 +70,6 @@ resource "aws_security_group" "devops_sg" {
     Name = "${var.project_prefix}-sg-${random_string.suffix.result}"
   }
 }
-
 
 ############################################################
 # COMMON BOOTSTRAP SCRIPT
@@ -127,7 +127,6 @@ resource "aws_instance" "ansible_node" {
     Name = "${var.project_prefix}-ansible-control"
   }
 }
-
 
 ############################################################
 # 2️⃣ JENKINS MASTER NODE
@@ -206,4 +205,3 @@ resource "null_resource" "run_ansible" {
     EOT
   }
 }
-
