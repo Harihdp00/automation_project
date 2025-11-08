@@ -22,8 +22,16 @@ data "aws_subnets" "default" {
 ############################################################
 # SECURITY GROUP
 ############################################################
+
+# Generate a small random suffix to avoid duplicate SG names
+resource "random_string" "suffix" {
+  length  = 4
+  upper   = false
+  special = false
+}
+
 resource "aws_security_group" "devops_sg" {
-  name        = "${var.project_prefix}-sg"
+  name        = "${var.project_prefix}-sg-${random_string.suffix.result}"
   description = "Allow SSH, Jenkins, and Web access"
   vpc_id      = data.aws_vpc.default.id
 
@@ -59,9 +67,10 @@ resource "aws_security_group" "devops_sg" {
   }
 
   tags = {
-    Name = "${var.project_prefix}-sg"
+    Name = "${var.project_prefix}-sg-${random_string.suffix.result}"
   }
 }
+
 
 ############################################################
 # COMMON BOOTSTRAP SCRIPT
