@@ -1,38 +1,44 @@
 ############################################################
-# PROVIDER & REGION
+# PROVIDER
 ############################################################
 provider "aws" {
   region = "ap-south-1"
 }
 
 ############################################################
-# GENERATE & REGISTER SSH KEY PAIR (Hari_ubuntu)
+# GENERATE SSH KEY LOCALLY
 ############################################################
 resource "tls_private_key" "hari_key" {
   algorithm = "RSA"
   rsa_bits  = 2048
 }
 
+############################################################
+# REGISTER KEY IN AWS
+############################################################
 resource "aws_key_pair" "hari_key_pair" {
-  key_name   = "Hari_ubuntu"
+  key_name   = "Hari_ubuntu_auto"
   public_key = tls_private_key.hari_key.public_key_openssh
 }
 
-# Wait for AWS to register the key before EC2 creation
+############################################################
+# OPTIONAL: WAIT AFTER KEY CREATION
+############################################################
 resource "time_sleep" "wait_for_key_pair" {
   depends_on      = [aws_key_pair.hari_key_pair]
-  create_duration = "10s"
+  create_duration = "15s"
 }
 
-# Save the private key locally
+############################################################
+# SAVE PRIVATE KEY LOCALLY
+############################################################
 resource "local_file" "save_private_key" {
-  depends_on = [tls_private_key.hari_key]
   content    = tls_private_key.hari_key.private_key_pem
   filename   = "${path.module}/Hari_ubuntu.pem"
 }
 
 ############################################################
-# DATA SOURCES (VPC & SUBNETS)
+# DATA SOURCES
 ############################################################
 data "aws_vpc" "default" {
   default = true
@@ -46,7 +52,7 @@ data "aws_subnets" "default" {
 }
 
 ############################################################
-# SECURITY GROUP (with random suffix)
+# SECURITY GROUP
 ############################################################
 resource "random_string" "suffix" {
   length  = 4
@@ -55,7 +61,7 @@ resource "random_string" "suffix" {
 }
 
 resource "aws_security_group" "devops_sg" {
-  name        = "${var.project_prefix}-sg-${random_string.suffix.result}"
+  name        = "automation-sg-${random_string.suffix.result}"
   description = "Allow SSH, Jenkins, and Web access"
   vpc_id      = data.aws_vpc.default.id
 
@@ -68,7 +74,7 @@ resource "aws_security_group" "devops_sg" {
   }
 
   ingress {
-    description = "Allow Jenkins Web UI"
+    description = "Allow Jenkins"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
@@ -91,12 +97,12 @@ resource "aws_security_group" "devops_sg" {
   }
 
   tags = {
-    Name = "${var.project_prefix}-sg-${random_string.suffix.result}"
+    Name = "automation-sg-${random_string.suffix.result}"
   }
 }
 
 ############################################################
-# COMMON BOOTSTRAP SCRIPT
+# COMMON BOOTSTRAP
 ############################################################
 locals {
   base_user_data = <<-EOC
@@ -114,10 +120,10 @@ locals {
 }
 
 ############################################################
-# 1️⃣ ANSIBLE CONTROL NODE
+# ANSIBLE CONTROL NODE
 ############################################################
 resource "aws_instance" "ansible_node" {
-  depends_on = [time_sleep.wait_for_key_pair]
+  depends_on = [aws_key_pair.hari_key_pair, time_sleep.wait_for_key_pair]
   ami                         = var.ami_id
   instance_type               = "t2.micro"
   key_name                    = aws_key_pair.hari_key_pair.key_name
@@ -131,15 +137,15 @@ resource "aws_instance" "ansible_node" {
   EOF
 
   tags = {
-    Name = "${var.project_prefix}-ansible-control"
+    Name = "automation-ansible"
   }
 }
 
 ############################################################
-# 2️⃣ JENKINS MASTER NODE
+# JENKINS MASTER
 ############################################################
 resource "aws_instance" "jenkins_master" {
-  depends_on = [time_sleep.wait_for_key_pair]
+  depends_on = [aws_key_pair.hari_key_pair, time_sleep.wait_for_key_pair]
   ami                         = var.ami_id
   instance_type               = "t2.micro"
   key_name                    = aws_key_pair.hari_key_pair.key_name
@@ -150,15 +156,15 @@ resource "aws_instance" "jenkins_master" {
   user_data = "${local.base_user_data}\n\nhostnamectl set-hostname jenkins-master\n"
 
   tags = {
-    Name = "${var.project_prefix}-jenkins-master"
+    Name = "automation-jenkins-master"
   }
 }
 
 ############################################################
-# 3️⃣ JENKINS WORKER NODE
+# JENKINS WORKER
 ############################################################
 resource "aws_instance" "jenkins_worker" {
-  depends_on = [time_sleep.wait_for_key_pair]
+  depends_on = [aws_key_pair.hari_key_pair, time_sleep.wait_for_key_pair]
   ami                         = var.ami_id
   instance_type               = "t2.micro"
   key_name                    = aws_key_pair.hari_key_pair.key_name
@@ -169,7 +175,7 @@ resource "aws_instance" "jenkins_worker" {
   user_data = "${local.base_user_data}\n\nhostnamectl set-hostname jenkins-worker\n"
 
   tags = {
-    Name = "${var.project_prefix}-jenkins-worker"
+    Name = "automation-jenkins-worker"
   }
 }
 
