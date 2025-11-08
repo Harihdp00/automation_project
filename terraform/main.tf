@@ -6,7 +6,7 @@ provider "aws" {
 }
 
 ############################################################
-# DATA SOURCES (VPC & SUBNETS)
+# DATA SOURCES (Default VPC & Subnets)
 ############################################################
 data "aws_vpc" "default" {
   default = true
@@ -20,10 +20,8 @@ data "aws_subnets" "default" {
 }
 
 ############################################################
-# SECURITY GROUP
+# SECURITY GROUP (Unique to Avoid Conflicts)
 ############################################################
-
-# ✅ Add a random suffix to avoid InvalidGroup.Duplicate
 resource "random_string" "suffix" {
   length  = 4
   upper   = false
@@ -94,7 +92,7 @@ locals {
 ############################################################
 resource "aws_instance" "ansible_node" {
   ami                         = var.ami_id
-  instance_type               = "t3.micro"
+  instance_type               = "t2.micro"  # ✅ Free Tier eligible
   key_name                    = var.key_name
   subnet_id                   = data.aws_subnets.default.ids[0]
   vpc_security_group_ids      = [aws_security_group.devops_sg.id]
@@ -103,24 +101,6 @@ resource "aws_instance" "ansible_node" {
   user_data = <<-EOF
     ${local.base_user_data}
     hostnamectl set-hostname ansible-control
-
-    # Add GitHub SSH private key securely
-    echo "${filebase64(abspath(var.github_private_key_path))}" | base64 -d > /home/devops/.ssh/id_ed25519
-    chmod 600 /home/devops/.ssh/id_ed25519
-    chown devops:devops /home/devops/.ssh/id_ed25519
-
-    # Add GitHub to known_hosts
-    ssh-keyscan github.com >> /home/devops/.ssh/known_hosts
-    chown devops:devops /home/devops/.ssh/known_hosts
-
-    # Clone automation repo
-    sudo -u devops git clone git@github.com:Harihdp00/automation_project.git /home/devops/iac/automation_project || true
-    chown -R devops:devops /home/devops/iac
-
-    # Install Ansible and run site playbook
-    apt install -y ansible
-    cd /home/devops/iac/automation_project/ansible
-    ansible-playbook -i hosts playbooks/site.yaml
   EOF
 
   tags = {
@@ -133,7 +113,7 @@ resource "aws_instance" "ansible_node" {
 ############################################################
 resource "aws_instance" "jenkins_master" {
   ami                         = var.ami_id
-  instance_type               = "t3.micro"
+  instance_type               = "t2.micro"  # ✅ Free Tier eligible
   key_name                    = var.key_name
   subnet_id                   = data.aws_subnets.default.ids[0]
   vpc_security_group_ids      = [aws_security_group.devops_sg.id]
@@ -151,7 +131,7 @@ resource "aws_instance" "jenkins_master" {
 ############################################################
 resource "aws_instance" "jenkins_worker" {
   ami                         = var.ami_id
-  instance_type               = "t3.micro"
+  instance_type               = "t2.micro"  # ✅ Free Tier eligible
   key_name                    = var.key_name
   subnet_id                   = data.aws_subnets.default.ids[0]
   vpc_security_group_ids      = [aws_security_group.devops_sg.id]
@@ -165,43 +145,16 @@ resource "aws_instance" "jenkins_worker" {
 }
 
 ############################################################
-# 4️⃣ DYNAMIC ANSIBLE INVENTORY
+# OUTPUTS
 ############################################################
-resource "local_file" "ansible_inventory" {
-  filename = "../ansible/hosts"
-  content = templatefile("${path.module}/inventory.tpl", {
-    control_ip = aws_instance.ansible_node.public_ip
-    master_ip  = aws_instance.jenkins_master.public_ip
-    worker_ips = [aws_instance.jenkins_worker.public_ip]
-  })
+output "ansible_control_ip" {
+  value = aws_instance.ansible_node.public_ip
 }
 
-############################################################
-# 5️⃣ RUN ANSIBLE FROM CONTROL NODE
-############################################################
-resource "null_resource" "run_ansible" {
-  depends_on = [local_file.ansible_inventory]
+output "jenkins_master_ip" {
+  value = aws_instance.jenkins_master.public_ip
+}
 
-  provisioner "local-exec" {
-    command = <<EOT
-      echo "🚀 Starting Ansible automation from Control Node..."
-      sleep 60
-
-      KEY_PATH="$HOME/.ssh/${var.key_name}.pem"
-
-      if [ ! -f "$KEY_PATH" ]; then
-        echo "❌ ERROR: SSH key not found at $KEY_PATH"
-        exit 1
-      fi
-
-      chmod 600 "$KEY_PATH"
-      echo "✅ Permissions set for $KEY_PATH"
-
-      ssh -o StrictHostKeyChecking=no -i "$KEY_PATH" devops@${aws_instance.ansible_node.public_ip} <<'EOF'
-        echo "🧠 Inside Control Node - Executing Ansible Playbook"
-        cd /home/devops/iac/automation_project/ansible
-        ansible-playbook -i hosts playbooks/site.yaml
-      EOF
-    EOT
-  }
+output "jenkins_worker_ip" {
+  value = aws_instance.jenkins_worker.public_ip
 }
