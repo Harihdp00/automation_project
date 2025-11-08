@@ -96,11 +96,8 @@ resource "aws_instance" "ansible_node" {
     ${local.base_user_data}
     hostnamectl set-hostname ansible-control
 
-    # Add GitHub SSH private key
-    cat <<'EOKEY' > /home/devops/.ssh/id_ed25519
-    ${file(abspath(var.github_private_key_path))}
-    EOKEY
-
+    # Add GitHub SSH private key securely
+    echo "${filebase64(abspath(var.github_private_key_path))}" | base64 -d > /home/devops/.ssh/id_ed25519
     chmod 600 /home/devops/.ssh/id_ed25519
     chown devops:devops /home/devops/.ssh/id_ed25519
 
